@@ -1,24 +1,27 @@
-[debug] Command-line config: ['-vU', '--cookies', '/media/pi/Seagate Backup Plus Drive/Video/cookies.txt', 'https://www.youtube.com/watch?v=pIgxjW1lZjw']
-[debug] Encodings: locale UTF-8, fs utf-8, pref UTF-8, out utf-8, error utf-8, screen utf-8
-[debug] yt-dlp version nightly@2024.12.26.232815 from yt-dlp/yt-dlp-nightly-builds [0b6b7742c] (zip)
-[debug] Python 3.11.2 (CPython aarch64 64bit) - Linux-6.6.47+rpt-rpi-2712-aarch64-with-glibc2.36 (OpenSSL 3.0.15 3 Sep 2024, glibc 2.36)
-[debug] exe versions: ffmpeg 5.1.6-0 (setts), ffprobe 5.1.6-0
-[debug] Optional libraries: Cryptodome-3.11.0, brotli-1.0.9, certifi-2022.09.24, requests-2.28.1, sqlite3-3.40.1, urllib3-1.26.12
-[debug] Proxy map: {}
-[debug] Request Handlers: urllib
-[debug] Loaded 1837 extractors
-[debug] Fetching release info: https://api.github.com/repos/yt-dlp/yt-dlp-nightly-builds/releases/latest
-Latest version: nightly@2024.12.26.232815 from yt-dlp/yt-dlp-nightly-builds
-yt-dlp is up to date (nightly@2024.12.26.232815 from yt-dlp/yt-dlp-nightly-builds)
-[youtube] Extracting URL: https://www.youtube.com/watch?v=pIgxjW1lZjw
-[youtube] pIgxjW1lZjw: Downloading webpage
-[youtube] pIgxjW1lZjw: Downloading ios player API JSON
-[youtube] pIgxjW1lZjw: Downloading mweb player API JSON
-ERROR: [youtube] pIgxjW1lZjw: Sign in to confirm you’re not a bot. Use --cookies-from-browser or --cookies for the authentication. See  https://github.com/yt-dlp/yt-dlp/wiki/FAQ#how-do-i-pass-cookies-to-yt-dlp  for how to manually pass cookies. Also see  https://github.com/yt-dlp/yt-dlp/wiki/Extractors#exporting-youtube-cookies  for tips on effectively exporting YouTube cookies
-  File "/usr/local/bin/yt-dlp/yt_dlp/extractor/common.py", line 742, in extract
-    ie_result = self._real_extract(url)
-                ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/usr/local/bin/yt-dlp/yt_dlp/extractor/youtube.py", line 4543, in _real_extract
-    self.raise_no_formats(reason, expected=True)
-  File "/usr/local/bin/yt-dlp/yt_dlp/extractor/common.py", line 1276, in raise_no_formats
-    raise ExtractorError(msg, expected=expected, video_id=video_id)
+# Netscape HTTP Cookie File
+# http://curl.haxx.se/rfc/cookie_spec.html
+# This is a generated file!  Do not edit.
+
+.youtube.com	TRUE	/	FALSE	1774827971	HSID	AKbkuyrTCrQXC62Rz
+.youtube.com	TRUE	/	TRUE	1774827971	SSID	Ab7jzrsVlmwQNU7bd
+.youtube.com	TRUE	/	FALSE	1774827971	APISID	dOtOCZqQFH9JlS6t/Acel3u9OAKGypRTY7
+.youtube.com	TRUE	/	TRUE	1774827971	SAPISID	PbQDJaOQZ07HK5kN/AewSrnkLkF8r-NW5Q
+.youtube.com	TRUE	/	TRUE	1774827971	__Secure-1PAPISID	PbQDJaOQZ07HK5kN/AewSrnkLkF8r-NW5Q
+.youtube.com	TRUE	/	TRUE	1774827971	__Secure-3PAPISID	PbQDJaOQZ07HK5kN/AewSrnkLkF8r-NW5Q
+.youtube.com	TRUE	/	TRUE	1774827968	LOGIN_INFO	AFmmF2swRgIhAOqZ-xdK8B8zRAb3M9VnfNvJ9J6C0qROy0GRDNt0F_-sAiEAl1nIUIqM6FqE8haQK30akPoArNJqJzdfKamID7PjUqE:QUQ3MjNmeVBvUThGNW44bGtOb3pIU25vaUJFZEptelJMdjMyeFJnMDZvbnRobnFIeXVkZjZXYzhBc0twT0dkNldOUHdwaDBGNFJ0Qml4ZlJqUmNMQVZWY2dYcnhKMVlJY0xfSjRpMDdwYjFEWF9SbTNJZE9Uc0l2cS1xN1pnWHNWeHdCZlhiSGs3THJIWUZtVFhvdFBoaU1sYjgyRW5uOWxR
+.youtube.com	TRUE	/	TRUE	1740269768	GPS	1
+.youtube.com	TRUE	/	TRUE	1771803969	__Secure-1PSIDTS	sidts-CjIBEJ3XVx47EUvausEg8cs8fzwdfZkLNd7YgRWUpPBV18lk_7B1DwXIMT_9eDDUax6beBAA
+.youtube.com	TRUE	/	TRUE	1771803969	__Secure-3PSIDTS	sidts-CjIBEJ3XVx47EUvausEg8cs8fzwdfZkLNd7YgRWUpPBV18lk_7B1DwXIMT_9eDDUax6beBAA
+.youtube.com	TRUE	/	TRUE	1774827971	PREF	f6=40000000&tz=Europe.Paris
+.youtube.com	TRUE	/	FALSE	1774827971	SID	g.a000uAicR51z2Mfv00syGtRBSPC6B9kNZwsIqAQgzhXU_EYlk_TijXxpc2HHfLrowqz_fDAJ0wACgYKARwSARYSFQHGX2MiRAcBPEYI8vqDRJWsfIlNmBoVAUF8yKpoKIbxdKfH5ObyqkBauTRt0076
+.youtube.com	TRUE	/	TRUE	1774827971	__Secure-1PSID	g.a000uAicR51z2Mfv00syGtRBSPC6B9kNZwsIqAQgzhXU_EYlk_Tip_kN_CaWj_EVECvjJvxvkgACgYKASISARYSFQHGX2MiYNbQpkaF1KXNKGVPoehFQRoVAUF8yKoWj8BMH58xaD6EQpHR0nuK0076
+.youtube.com	TRUE	/	TRUE	1774827971	__Secure-3PSID	g.a000uAicR51z2Mfv00syGtRBSPC6B9kNZwsIqAQgzhXU_EYlk_TiM7HcoHX9FfTf01dgIqJScwACgYKARASARYSFQHGX2MioLjafH_5h55naYMb3m9jHRoVAUF8yKperxDbvKghAbJpKy_U7e_O0076
+.youtube.com	TRUE	/	TRUE	1774395967	__Secure-YEC	CgtSeUhLdU1mWkNtMCjDw-m9BjIiCgJJVBIcEhgSFhMLFBUWFwwYGRobHB0eHw4PIBAREiEgDg%3D%3D
+.youtube.com	TRUE	/	TRUE	1740268573	CONSISTENCY	AKreu9tyRBUScOXUcGSPFJRuHwE9rkv8_Mf0MWLxQjtoJyiX3a9oNVyihEVpaPZrJ9WwrSsx1BMMY40SQQK_tAxCkjJDkuuqFLCL0zAyUXgjqzjQcP0iamQJseo_MSlW-DLR-48XkQyVL0KMVu3Qbndo
+.youtube.com	TRUE	/	TRUE	1756079173	NID	521=HXRf5LBH6VV-Y4KDwRYjMiyW01UfPpY_DCMqy5TYy2W2mq5nN1YfffzXaJe8rfSTu_i3TfXPHY7PMNxm6XEKF7id5PEP8nKO0w1zemkzBfDUYDOrZQYt_wZtQD7kO-FWyg6luayCmgwI0Ya-2wt-Ebg2vt_H7fofxgRvENEgynbC3Miznn04UKhZVFe5vEDcPpyyEMixpy428SJ2LWr6_Tl3oncpH5XYtx8vIL9qzDAxa1es1EbYiAcKIALONw
+.youtube.com	TRUE	/	FALSE	1771804272	SIDCC	AKEyXzVoCUBGXij8d9iF0eJeLWK7i3IdxOdPUxuRAY-SXLtH0f8HoPq2fIFxnXTo5rT-S4ii
+.youtube.com	TRUE	/	TRUE	1771804272	__Secure-1PSIDCC	AKEyXzUEibEkLXHAkMu0fniA-FnQkglwTytTR3qngK0w6mY29vq_pioH545WZDc7XwHelN_G
+.youtube.com	TRUE	/	TRUE	1771804272	__Secure-3PSIDCC	AKEyXzUT4OKpcqKgs56OuMtW0KeERoZMx2CAYyOORtl9K7_CR7bReYkSFeXgl--edFO87HfV
+.youtube.com	TRUE	/	TRUE	0	YSC	6wgWCEn3Pgg
+.youtube.com	TRUE	/	TRUE	1755819968	__Secure-ROLLOUT_TOKEN	COXovdfQxejQShDjsoWvu9iLAxj75MGwu9iLAw%3D%3D
+.youtube.com	TRUE	/	TRUE	1774395971	VISITOR_PRIVACY_METADATA	CgJJVBIcEhgSFhMLFBUWFwwYGRobHB0eHw4PIBAREiEgDg%3D%3D
