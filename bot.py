@@ -1,112 +1,82 @@
 import os
+import logging
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters, ContextTypes
 import yt_dlp
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 
-# الحصول على التوكن من بيئة التشغيل
+# تفعيل تسجيل الأخطاء
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# استدعاء توكن البوت من البيئة
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# إعداد البوت
-application = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+# مسار ملف الكوكيز لحل مشكلة تسجيل الدخول
+COOKIES_FILE = "cookies.txt"
 
-# المجلد لحفظ الملفات
-DOWNLOADS_FOLDER = "downloads"
-if not os.path.exists(DOWNLOADS_FOLDER):
-    os.makedirs(DOWNLOADS_FOLDER)
+def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """رسالة الترحيب عند بدء المحادثة."""
+    update.message.reply_text("مرحبًا! أرسل رابط الفيديو لاختيار نوع التحميل 🎯")
 
-# حفظ الروابط الواردة مؤقتًا
-user_links = {}
-
-# رسالة الترحيب
-async def start(update: Update, context):
-    await update.message.reply_text("👋 مرحبًا بك! أرسل رابط فيديو من YouTube, Facebook, Instagram وسأقوم بتحميله لك 🎥")
-
-# استقبال الرابط وإظهار قائمة الاختيار
-async def receive_link(update: Update, context):
+def choose_download_type(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """إرسال قائمة للاختيار بين تحميل الصوت أو الفيديو."""
     url = update.message.text
-
-    if not any(site in url for site in ["youtube.com", "youtu.be", "facebook.com", "instagram.com"]):
-        await update.message.reply_text("❌ هذا الرابط غير مدعوم! الرجاء إرسال رابط من YouTube أو Facebook أو Instagram.")
-        return
-
-    # حفظ الرابط في ذاكرة المستخدم
-    user_links[update.message.chat_id] = url
-
-    # إنشاء أزرار الاختيار
-    keyboard = [
-        [InlineKeyboardButton("🎵 تحميل الصوت", callback_data="audio")],
-        [InlineKeyboardButton("🎥 تحميل الفيديو", callback_data="video")]
-    ]
+    keyboard = [[
+        InlineKeyboardButton("🎵 تحميل الصوت", callback_data=f"audio|{url}"),
+        InlineKeyboardButton("📹 تحميل الفيديو", callback_data=f"video|{url}")
+    ]]
     reply_markup = InlineKeyboardMarkup(keyboard)
+    update.message.reply_text("اختر نوع التحميل ⬇", reply_markup=reply_markup)
 
-    await update.message.reply_text("🎯 اختر نوع التحميل:", reply_markup=reply_markup)
-
-# تحميل الفيديو أو الصوت بناءً على الاختيار
-async def download_media(update: Update, context):
+def download_media(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """تنزيل الوسائط حسب اختيار المستخدم."""
     query = update.callback_query
     await query.answer()
-
-    chat_id = query.message.chat_id
-    url = user_links.get(chat_id, None)
-
-    if not url:
-        await query.message.reply_text("❌ لم أتمكن من العثور على الرابط. أرسل الرابط من جديد.")
-        return
-
-    # إعداد الخيارات بناءً على الاختيار
-    if query.data == "audio":
-        ydl_opts = {
-            'format': 'bestaudio',
-            'outtmpl': f'{DOWNLOADS_FOLDER}/%(title)s.%(ext)s',
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'cookiefile': 'cookies.txt',  # استخدام ملف الكوكيز لتسجيل الدخول
-            'quiet': False,
-            'verbose': True,
-            'nocheckcertificate': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0'
-            }
-        }
-        file_type = "الصوت"
+    choice, url = query.data.split('|')
+    
+    query.edit_message_text(text="⏳ جارٍ التحميل... الرجاء الانتظار.")
+    
+    ydl_opts = {
+        'quiet': True,
+        'noplaylist': True,
+        'outtmpl': '%(title)s.%(ext)s',
+        'cookiefile': COOKIES_FILE,  # استخدام الكوكيز لحل مشكلة تسجيل الدخول
+    }
+    
+    if choice == "audio":
+        ydl_opts['format'] = 'bestaudio/best'
+        ydl_opts['postprocessors'] = [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }]
     else:
-        ydl_opts = {
-            'format': 'best',
-            'outtmpl': f'{DOWNLOADS_FOLDER}/%(title)s.%(ext)s',
-            'cookiefile': 'cookies.txt',  # استخدام ملف الكوكيز
-            'quiet': False,
-            'verbose': True,
-            'nocheckcertificate': True,
-            'http_headers': {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0'
-            }
-        }
-        file_type = "الفيديو"
-
-    await query.message.reply_text(f"⏳ جارٍ تحميل {file_type}، يرجى الانتظار...")
-
+        ydl_opts['format'] = 'bestvideo+bestaudio/best'
+    
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            file_path = ydl.prepare_filename(info)
-
-        if query.data == "audio":
-            file_path = file_path.rsplit('.', 1)[0] + ".mp3"
-
-        await query.message.reply_document(document=open(file_path, 'rb'))
-        os.remove(file_path)  # حذف الملف بعد الإرسال لتوفير المساحة
+            file_name = ydl.prepare_filename(info)
+            if choice == "audio":
+                file_name = file_name.replace(".webm", ".mp3").replace(".m4a", ".mp3")
+        
+        query.message.reply_text("✅ تم التحميل! جارٍ الإرسال...")
+        with open(file_name, 'rb') as file:
+            if choice == "audio":
+                await query.message.reply_audio(file)
+            else:
+                await query.message.reply_video(file)
+        os.remove(file_name)
     except Exception as e:
-        await query.message.reply_text(f"❌ حدث خطأ أثناء تحميل {file_type}:\n{str(e)}")
+        query.message.reply_text(f"❌ حدث خطأ أثناء التحميل:\n{e}")
 
-# إضافة الأوامر
-application.add_handler(CommandHandler("start", start))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, receive_link))
-application.add_handler(CallbackQueryHandler(download_media))
+# إعداد البوت
+app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
+app.add_handler(CommandHandler("start", start))
+app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, choose_download_type))
+app.add_handler(CallbackQueryHandler(download_media))
 
 # تشغيل البوت
-if __name__ == '__main__':
+if __name__ == "__main__":
     print("✅ البوت يعمل بنجاح!")
-    application.run_polling()
+    app.run_polling()}
