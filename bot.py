@@ -1,109 +1,107 @@
-import logging
 import os
+import logging
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
+from telegram.ext import Updater
 import yt_dlp
 
-# إعداد تسجيل الأخطاء
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# احصل على التوكن من المتغير البيئي
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
+# إعداد السجل لتتبع الأخطاء
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# جلب توكن البوت من المتغيرات البيئية
-TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+# مجلد التنزيلات
 DOWNLOADS_FOLDER = "downloads"
 os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
 
-# حفظ لغة المستخدم
-user_languages = {}
-
-def start(update: Update, context):
-    """عند بدء البوت، يطلب من المستخدم اختيار اللغة"""
-    keyboard = [[InlineKeyboardButton("العربية 🇸🇦", callback_data='lang_ar'),
-                 InlineKeyboardButton("English 🇬🇧", callback_data='lang_en')]]
+async def start(update: Update, context):
+    """رسالة الترحيب عند تشغيل البوت"""
+    keyboard = [
+        [InlineKeyboardButton("العربية", callback_data="lang_ar")],
+        [InlineKeyboardButton("English", callback_data="lang_en")]
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text("اختر لغتك:\nChoose your language:", reply_markup=reply_markup)
+    await update.message.reply_text("🎯 Please choose your language / يرجى اختيار اللغة", reply_markup=reply_markup)
 
-def language_selection(update: Update, context):
-    """حفظ لغة المستخدم بعد الاختيار"""
+async def language_choice(update: Update, context):
+    """معالجة اختيار اللغة"""
     query = update.callback_query
-    query.answer()
-    chat_id = query.message.chat_id
-    
-    if query.data == 'lang_ar':
-        user_languages[chat_id] = 'ar'
-        query.edit_message_text("✅ اللغة المختارة: العربية")
+    await query.answer()
+
+    language = query.data
+    if language == "lang_ar":
+        await query.edit_message_text("مرحبًا! أرسل رابط فيديو وسأساعدك في تحميله 🎥🎵")
+    elif language == "lang_en":
+        await query.edit_message_text("Hello! Send a video link, and I'll help you download it 🎥🎵")
+
+    # تخزين اللغة المفضلة
+    context.user_data['language'] = language
+
+async def download_menu(update: Update, context):
+    """إظهار قائمة التحميل عند إرسال رابط"""
+    url = update.message.text
+
+    keyboard = [
+        [InlineKeyboardButton("🎵 تحميل الصوت (MP3)", callback_data=f"audio|{url}")],
+        [InlineKeyboardButton("📹 تحميل الفيديو (MP4)", callback_data=f"video|{url}")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    language = context.user_data.get('language', 'lang_en')  # التحقق من اللغة
+    if language == 'lang_ar':
+        await update.message.reply_text("🎯 اختر نوع التحميل:", reply_markup=reply_markup)
     else:
-        user_languages[chat_id] = 'en'
-        query.edit_message_text("✅ Selected language: English")
-    
-    show_download_options(query, chat_id)
+        await update.message.reply_text("🎯 Choose the type of download:", reply_markup=reply_markup)
 
-def show_download_options(update, chat_id):
-    """عرض خيارات تحميل الفيديو أو الصوت"""
-    lang = user_languages.get(chat_id, 'en')
-    
-    text = "اختر نوع التحميل 🎯:" if lang == 'ar' else "Choose download type 🎯:"
-    keyboard = [[InlineKeyboardButton("🎵 تحميل الصوت", callback_data='audio'),
-                 InlineKeyboardButton("📹 تحميل الفيديو", callback_data='video')]]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text(text, reply_markup=reply_markup)
-
-def handle_download(update: Update, context):
-    """استقبال رابط الفيديو من المستخدم"""
-    chat_id = update.message.chat_id
-    user_languages.setdefault(chat_id, 'en')  # تعيين لغة افتراضية
-    
-    context.user_data['url'] = update.message.text  # حفظ الرابط
-    show_download_options(update, chat_id)
-
-def process_download(update: Update, context):
-    """بدء عملية تحميل الفيديو أو الصوت"""
+async def button_handler(update: Update, context):
+    """معالجة زر الاختيار وتنفيذ التحميل"""
     query = update.callback_query
-    query.answer()
+    await query.answer()
+
+    choice, url = query.data.split("|")
     chat_id = query.message.chat_id
-    choice = query.data
+
+    await query.edit_message_text("⏳ جار التحميل، يرجى الانتظار...")
+
+    file_path = await download_media(url, choice)
     
-    url = context.user_data.get('url')
-    if not url:
-        query.edit_message_text("❌ يرجى إرسال رابط فيديو أولاً!" if user_languages[chat_id] == 'ar' else "❌ Please send a video link first!")
-        return
-    
-    query.edit_message_text("⏳ جارٍ تحميل الملف..." if user_languages[chat_id] == 'ar' else "⏳ Downloading the file...")
-    
-    file_path = download_media(url, choice)
     if file_path:
-        context.bot.send_document(chat_id, open(file_path, 'rb'))
-        os.remove(file_path)
+        await context.bot.send_document(chat_id, document=open(file_path, "rb"))
+        os.remove(file_path)  # حذف الملف بعد الإرسال
     else:
-        query.edit_message_text("❌ فشل التحميل!" if user_languages[chat_id] == 'ar' else "❌ Download failed!")
+        await query.edit_message_text("❌ حدث خطأ أثناء التحميل.")
 
-def download_media(url, choice):
-    """تحميل الفيديو أو الصوت باستخدام yt-dlp مع دعم ملفات الكوكيز"""
+async def download_media(url, choice):
+    """تحميل الفيديو أو الصوت باستخدام yt-dlp"""
     output_template = f"{DOWNLOADS_FOLDER}/%(title)s.%(ext)s"
-    
     options = {
         'format': 'bestaudio/best' if choice == "audio" else 'best',
         'outtmpl': output_template,
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}] if choice == "audio" else [],
-        'cookies': 'cookies.txt'  # استخدام ملف الكوكيز المصادق عليه
+        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}] if choice == "audio" else []
     }
-    
+
     try:
         with yt_dlp.YoutubeDL(options) as ydl:
             info_dict = ydl.extract_info(url, download=True)
             file_path = ydl.prepare_filename(info_dict)
             return file_path.replace(".webm", ".mp3") if choice == "audio" else file_path
     except Exception as e:
-        logger.error(f"❌ خطأ أثناء التحميل: {e}")
+        logger.error(f"خطأ أثناء التحميل: {e}")
         return None
 
-# تشغيل البوت
-if __name__ == "__main__":
-    app = Application.builder().token(TELEGRAM_BOT_TOKEN).build()
-    
+def main():
+    """تشغيل البوت"""
+    app = Application.builder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_download))
-    app.add_handler(CallbackQueryHandler(language_selection, pattern="^lang_"))
-    app.add_handler(CallbackQueryHandler(process_download, pattern="^(audio|video)$"))
-    
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_menu))
+    app.add_handler(CallbackQueryHandler(language_choice, pattern="^(lang_ar|lang_en)$"))
+    app.add_handler(CallbackQueryHandler(button_handler))
+
+    logger.info("🤖 البوت يعمل الآن...")
     app.run_polling()
+
+if __name__ == "__main__":
+    main()
