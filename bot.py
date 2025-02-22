@@ -63,14 +63,26 @@ async def download_media(update: Update, context):
                 'preferredcodec': 'mp3',
                 'preferredquality': '192',
             }],
-            'cookiefile': 'cookies.txt',
+            'cookiefile': 'cookies.txt',  # استخدام ملف الكوكيز لحل مشكلة تسجيل الدخول
+            'quiet': False,
+            'verbose': True,
+            'nocheckcertificate': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0'
+            }
         }
         file_type = "الصوت"
     else:
         ydl_opts = {
             'format': 'best',
             'outtmpl': f'{DOWNLOADS_FOLDER}/%(title)s.%(ext)s',
-            'cookiefile': 'cookies.txt',
+            'cookiefile': 'cookies.txt',  # استخدام ملف الكوكيز
+            'quiet': False,
+            'verbose': True,
+            'nocheckcertificate': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0'
+            }
         }
         file_type = "الفيديو"
 
