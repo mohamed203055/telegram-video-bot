@@ -1,47 +1,49 @@
 import os
 import logging
+import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
-from telegram.ext import Updater
 import yt_dlp
 
-# احصل على التوكن من المتغير البيئي
+# 🔹 الحصول على التوكن من المتغير البيئي
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# إعداد السجل لتتبع الأخطاء
+# 🔹 إعداد السجل لتتبع الأخطاء
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# مجلد التنزيلات
+# 🔹 مجلد التنزيلات
 DOWNLOADS_FOLDER = "downloads"
 os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
 
+# 🔹 ملف الكوكيز (لتحميل الفيديوهات المحمية)
+COOKIES_FILE = "cookies.txt"
+
+# 🔹 رسالة بدء التشغيل مع اختيار اللغة
 async def start(update: Update, context):
-    """رسالة الترحيب عند تشغيل البوت"""
     keyboard = [
-        [InlineKeyboardButton("العربية", callback_data="lang_ar")],
-        [InlineKeyboardButton("English", callback_data="lang_en")]
+        [InlineKeyboardButton("🇸🇦 العربية", callback_data="lang_ar")],
+        [InlineKeyboardButton("🇬🇧 English", callback_data="lang_en")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("🎯 Please choose your language / يرجى اختيار اللغة", reply_markup=reply_markup)
 
+# 🔹 تحديد اللغة المفضلة
 async def language_choice(update: Update, context):
-    """معالجة اختيار اللغة"""
     query = update.callback_query
     await query.answer()
 
     language = query.data
-    if language == "lang_ar":
-        await query.edit_message_text("مرحبًا! أرسل رابط فيديو وسأساعدك في تحميله 🎥🎵")
-    elif language == "lang_en":
-        await query.edit_message_text("Hello! Send a video link, and I'll help you download it 🎥🎵")
-
-    # تخزين اللغة المفضلة
     context.user_data['language'] = language
 
+    if language == "lang_ar":
+        await query.edit_message_text("مرحبًا! أرسل رابط فيديو وسأساعدك في تحميله 🎥🎵")
+    else:
+        await query.edit_message_text("Hello! Send a video link, and I'll help you download it 🎥🎵")
+
+# 🔹 عرض قائمة الاختيار عند إرسال رابط
 async def download_menu(update: Update, context):
-    """إظهار قائمة التحميل عند إرسال رابط"""
-    url = update.message.text
+    url = update.message.text.strip()
 
     keyboard = [
         [InlineKeyboardButton("🎵 تحميل الصوت (MP3)", callback_data=f"audio|{url}")],
@@ -49,37 +51,39 @@ async def download_menu(update: Update, context):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    language = context.user_data.get('language', 'lang_en')  # التحقق من اللغة
+    language = context.user_data.get('language', 'lang_en')  # التحقق من اللغة المختارة
     if language == 'lang_ar':
         await update.message.reply_text("🎯 اختر نوع التحميل:", reply_markup=reply_markup)
     else:
         await update.message.reply_text("🎯 Choose the type of download:", reply_markup=reply_markup)
 
+# 🔹 معالجة زر الاختيار وتحميل المحتوى
 async def button_handler(update: Update, context):
-    """معالجة زر الاختيار وتنفيذ التحميل"""
     query = update.callback_query
     await query.answer()
 
     choice, url = query.data.split("|")
     chat_id = query.message.chat_id
 
-    await query.edit_message_text("⏳ جار التحميل، يرجى الانتظار...")
+    await query.edit_message_text("⏳ جارٍ التحميل، يرجى الانتظار...")
 
     file_path = await download_media(url, choice)
-    
+
     if file_path:
         await context.bot.send_document(chat_id, document=open(file_path, "rb"))
         os.remove(file_path)  # حذف الملف بعد الإرسال
     else:
         await query.edit_message_text("❌ حدث خطأ أثناء التحميل.")
 
+# 🔹 تحميل الفيديو أو الصوت باستخدام yt-dlp
 async def download_media(url, choice):
-    """تحميل الفيديو أو الصوت باستخدام yt-dlp"""
     output_template = f"{DOWNLOADS_FOLDER}/%(title)s.%(ext)s"
     options = {
         'format': 'bestaudio/best' if choice == "audio" else 'best',
         'outtmpl': output_template,
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}] if choice == "audio" else []
+        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}] if choice == "audio" else [],
+        'cookies': COOKIES_FILE if os.path.exists(COOKIES_FILE) else None,  # استخدام ملف الكوكيز إذا كان موجودًا
+        'ffmpeg_location': "/usr/bin/ffmpeg",  # تحديد موقع FFmpeg
     }
 
     try:
@@ -88,11 +92,11 @@ async def download_media(url, choice):
             file_path = ydl.prepare_filename(info_dict)
             return file_path.replace(".webm", ".mp3") if choice == "audio" else file_path
     except Exception as e:
-        logger.error(f"خطأ أثناء التحميل: {e}")
+        logger.error(f"❌ خطأ أثناء التحميل: {e}")
         return None
 
-def main():
-    """تشغيل البوت"""
+# 🔹 تشغيل البوت 24/7 باستخدام asyncio
+async def main():
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -100,8 +104,8 @@ def main():
     app.add_handler(CallbackQueryHandler(language_choice, pattern="^(lang_ar|lang_en)$"))
     app.add_handler(CallbackQueryHandler(button_handler))
 
-    logger.info("🤖 البوت يعمل الآن...")
-    app.run_polling()
+    logger.info("✅ البوت يعمل الآن...")
+    await app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
