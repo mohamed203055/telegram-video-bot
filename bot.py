@@ -35,7 +35,8 @@ async def receive_link(update: Update, context):
     # إنشاء أزرار الاختيار
     keyboard = [
         [InlineKeyboardButton("🎵 تحميل الصوت", callback_data="audio")],
-        [InlineKeyboardButton("🎥 تحميل الفيديو", callback_data="video")]
+        [InlineKeyboardButton("🎥 تحميل الفيديو", callback_data="video")],
+        [InlineKeyboardButton("📺 تحميل الفيديو بدون صوت", callback_data="video_nosound")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -56,7 +57,7 @@ async def download_media(update: Update, context):
     # إعداد الخيارات بناءً على الاختيار
     if query.data == "audio":
         ydl_opts = {
-            'format': 'bestaudio',
+            'format': 'bestaudio/best',
             'outtmpl': f'{DOWNLOADS_FOLDER}/%(title)s.%(ext)s',
             'postprocessors': [{
                 'key': 'FFmpegExtractAudio',
@@ -72,6 +73,19 @@ async def download_media(update: Update, context):
             }
         }
         file_type = "الصوت"
+    elif query.data == "video_nosound":
+        ydl_opts = {
+            'format': 'bestvideo[ext=mp4]',
+            'outtmpl': f'{DOWNLOADS_FOLDER}/%(title)s.%(ext)s',
+            'cookiefile': 'cookies.txt',  # استخدام ملف الكوكيز
+            'quiet': False,
+            'verbose': True,
+            'nocheckcertificate': True,
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:91.0) Gecko/20100101 Firefox/91.0'
+            }
+        }
+        file_type = "الفيديو بدون صوت"
     else:
         ydl_opts = {
             'format': 'best',
@@ -96,7 +110,14 @@ async def download_media(update: Update, context):
         if query.data == "audio":
             file_path = file_path.rsplit('.', 1)[0] + ".mp3"
 
-        await query.message.reply_document(document=open(file_path, 'rb'))
+        # إرسال الملف
+        file_size = os.path.getsize(file_path) / (1024 * 1024)  # تحويل الحجم إلى ميغابايت
+        if file_size > 50:  # الحد الأقصى المسموح به للإرسال المباشر في تيليجرام هو 50MB
+            await query.message.reply_text("⚠️ حجم الملف كبير جدًا، سيتم إرساله كمستند.")
+            await query.message.reply_document(document=open(file_path, 'rb'))
+        else:
+            await query.message.reply_video(video=open(file_path, 'rb')) if "video" in query.data else await query.message.reply_audio(audio=open(file_path, 'rb'))
+
         os.remove(file_path)  # حذف الملف بعد الإرسال لتوفير المساحة
     except Exception as e:
         await query.message.reply_text(f"❌ حدث خطأ أثناء تحميل {file_type}:\n{str(e)}")
