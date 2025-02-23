@@ -1,22 +1,33 @@
 import os
 import logging
+import threading
+from flask import Flask
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters
 import yt_dlp
 
-# الحصول على التوكن من المتغير البيئي
+# ✅ Load Telegram Bot Token from Replit Secrets
 TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
-# إعداد السجل لتتبع الأخطاء
+# ✅ Logging Setup for Debugging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# مجلد التنزيلات
+# ✅ Create Downloads Folder
 DOWNLOADS_FOLDER = "downloads"
 os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
 
+# ✅ Set Correct FFmpeg Path for Replit
+FFMPEG_PATH = "/nix/store/.../bin/ffmpeg"  # Replace with actual path from `which ffmpeg`
+
+# ✅ Store user session data (language & video link)
+user_sessions = {}
+
+# ================================================
+# 🌍 LANGUAGE SELECTION
+# ================================================
 async def start(update: Update, context):
-    """رسالة الترحيب عند تشغيل البوت"""
+    """Send a welcome message and ask user for preferred language."""
     keyboard = [
         [InlineKeyboardButton("العربية", callback_data="lang_ar")],
         [InlineKeyboardButton("English", callback_data="lang_en")]
@@ -25,98 +36,136 @@ async def start(update: Update, context):
     await update.message.reply_text("🎯 Please choose your language / يرجى اختيار اللغة", reply_markup=reply_markup)
 
 async def language_choice(update: Update, context):
-    """معالجة اختيار اللغة"""
+    """Handle user’s language selection."""
     query = update.callback_query
     await query.answer()
 
     language = query.data
-    context.user_data['language'] = language
+    user_sessions[query.message.chat_id] = language
 
-    if language == "lang_ar":
-        await query.edit_message_text("مرحبًا! أرسل رابط فيديو وسأساعدك في تحميله 🎥🎵")
-    elif language == "lang_en":
-        await query.edit_message_text("Hello! Send a video link, and I'll help you download it 🎥🎵")
+    message_text = (
+        "مرحبًا! أرسل رابط فيديو وسأساعدك في تحميله 🎥🎵"
+        if language == "lang_ar" else
+        "Hello! Send a video link, and I'll help you download it 🎥🎵"
+    )
+    await query.edit_message_text(message_text)
 
+# ================================================
+# 📩 VIDEO LINK HANDLER
+# ================================================
 async def download_menu(update: Update, context):
-    """إظهار قائمة التحميل عند إرسال رابط"""
+    """Display download options after user sends a video link."""
     url = update.message.text
+    chat_id = update.message.chat_id
+    user_sessions[chat_id] = url  # Store user link
+
     keyboard = [
-        [InlineKeyboardButton("🎵 تحميل الصوت (MP3)", callback_data=f"audio|{url}")],
-        [InlineKeyboardButton("📹 تحميل الفيديو (MP4)", callback_data=f"video|{url}")]
+        [InlineKeyboardButton("🎵 تحميل الصوت (MP3)", callback_data="audio")],
+        [InlineKeyboardButton("📹 تحميل الفيديو (MP4)", callback_data="video")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    language = context.user_data.get('language', 'lang_en')
-    message_text = "🎯 اختر نوع التحميل:" if language == 'lang_ar' else "🎯 Choose the type of download:"
+    lang = user_sessions.get(chat_id, "lang_en")
+    message_text = "🎯 اختر نوع التحميل:" if lang == "lang_ar" else "🎯 Choose the type of download:"
     
     await update.message.reply_text(message_text, reply_markup=reply_markup)
 
-async def button_handler(update: Update, context):
-    """معالجة زر الاختيار وتنفيذ التحميل"""
+# ================================================
+# 🎬 DOWNLOAD HANDLER
+# ================================================
+async def download_media(update: Update, context):
+    """Download the requested media file."""
     query = update.callback_query
     await query.answer()
 
-    choice, url = query.data.split("|")
     chat_id = query.message.chat_id
+    url = user_sessions.get(chat_id)
 
-    await query.edit_message_text("⏳ جارٍ التحميل، يرجى الانتظار...")
+    if not url:
+        await query.message.reply_text("❌ No link found! Please send a valid video link.")
+        return
 
-    file_path = await download_media(url, choice)
+    choice = query.data
+    file_type = "الصوت" if choice == "audio" else "الفيديو"
+    await query.message.reply_text(f"⏳ جارٍ تحميل {file_type}، يرجى الانتظار...")
 
-    if file_path:
+    file_path = await process_download(url, choice)
+    
+    if file_path and os.path.exists(file_path):
         await context.bot.send_document(chat_id, document=open(file_path, "rb"))
-        os.remove(file_path)  # حذف الملف بعد الإرسال
+        os.remove(file_path)  # ✅ Delete file after sending
     else:
-        await query.edit_message_text("❌ حدث خطأ أثناء التحميل.")
+        await query.edit_message_text("❌ Error downloading the file.")
 
-async def download_media(url, choice):
-    """تحميل الفيديو أو الصوت باستخدام yt-dlp مع دعم cookies.txt"""
+# ================================================
+# ⏬ PROCESS DOWNLOAD USING yt-dlp
+# ================================================
+async def process_download(url, choice):
+    """Download the requested media file using yt-dlp."""
     output_template = f"{DOWNLOADS_FOLDER}/%(title)s.%(ext)s"
-    options = {
+    
+    ydl_opts = {
         'format': 'bestaudio/best' if choice == "audio" else 'best',
         'outtmpl': output_template,
-        'ffmpeg_location': "/usr/bin/ffmpeg",  # تأكد من تثبيت FFmpeg
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}] if choice == "audio" else []
+        'ffmpeg_location': FFMPEG_PATH,  # ✅ Correct FFmpeg path for Replit
+        'postprocessors': [{
+            'key': 'FFmpegExtractAudio',
+            'preferredcodec': 'mp3',
+            'preferredquality': '192',
+        }] if choice == "audio" else [],
+        'cookiefile': "cookies.txt" if os.path.exists("cookies.txt") else None,  # ✅ Use cookies if available
+        'quiet': False,
+        'verbose': True,
+        'nocheckcertificate': True,
+        'http_headers': {
+            'User-Agent': (
+                'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
+                '(KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36'
+            ),
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.9',
+            'Referer': 'https://www.youtube.com/',
+        }
     }
 
-    # إضافة `cookies.txt` إذا كان موجودًا
-    if os.path.exists("cookies.txt"):
-        options['cookiefile'] = "cookies.txt"
-
     try:
-        with yt_dlp.YoutubeDL(options) as ydl:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(url, download=True)
             file_path = ydl.prepare_filename(info_dict)
             return file_path.replace(".webm", ".mp3") if choice == "audio" else file_path
     except Exception as e:
-        logger.error(f"❌ خطأ أثناء التحميل: {e}")
+        logger.error(f"❌ Download error: {e}")
         return None
 
+# ================================================
+# 🤖 TELEGRAM BOT RUNNER
+# ================================================
 def main():
-    """تشغيل البوت"""
+    """Start the Telegram bot."""
     app = Application.builder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_menu))
     app.add_handler(CallbackQueryHandler(language_choice, pattern="^(lang_ar|lang_en)$"))
-    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(CallbackQueryHandler(download_media, pattern="^(audio|video)$"))
 
-    logger.info("🤖 البوت يعمل الآن...")
+    logger.info("🤖 Bot is running...")
     app.run_polling()
 
-if __name__ == "__main__":
-    main()
-from flask import Flask
-import threading
-
+# ================================================
+# 🌍 FLASK SERVER TO KEEP BOT RUNNING ON REPLIT
+# ================================================
 app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "The bot is running!"
+    return "✅ The bot is running!"
 
 def run_web():
+    """Run Flask server in a separate thread to keep Replit alive."""
     app.run(host="0.0.0.0", port=8080)
 
-# تشغيل الخادم في Thread منفصل
-threading.Thread(target=run_web, daemon=True).start()
+# ✅ Start Flask in a Thread & Run the Bot
+if __name__ == "__main__":
+    threading.Thread(target=run_web, daemon=True).start()
+    main()
