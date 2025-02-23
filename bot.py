@@ -106,3 +106,17 @@ def main():
 
 if __name__ == "__main__":
     main()
+from flask import Flask
+import threading
+
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "The bot is running!"
+
+def run_web():
+    app.run(host="0.0.0.0", port=8080)
+
+# تشغيل الخادم في Thread منفصل
+threading.Thread(target=run_web, daemon=True).start()
