@@ -1,77 +1,113 @@
-import telebot
-import yt_dlp
 import os
+import logging
 import threading
+import time
+import subprocess
+from flask import Flask
+from telegram import Update
+from telegram.ext import Application, CommandHandler, MessageHandler, filters
+import yt_dlp
 
-# 🔹 ضع توكن البوت هنا
-BOT_TOKEN = "YOUR_BOT_TOKEN"
+# ✅ جلب التوكن بأمان من Replit Secrets
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+if not TOKEN:
+    raise ValueError("❌ خطأ: لم يتم العثور على توكن البوت! تأكد من إضافته في Secrets.")
 
-bot = telebot.TeleBot(BOT_TOKEN)
+# ✅ ضبط السجل لتسجيل الأخطاء
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-# 🔹 مجلد التخزين المؤقت للمقاطع
-DOWNLOAD_FOLDER = "downloads"
-os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
+# ✅ إنشاء مجلد التحميلات
+DOWNLOADS_FOLDER = "downloads"
+os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
 
-# 🔹 دالة تحميل الصوتيات
-def download_audio(url, chat_id, message_id):
-    try:
-        bot.edit_message_text("⏳ جاري تحليل الرابط...", chat_id, message_id)
+# ✅ ضبط مسار FFmpeg (للتأكد من تثبيته في Replit)
+FFMPEG_PATH = "/home/runner/.nix-profile/bin/ffmpeg"
 
-        # إعدادات yt-dlp لتنزيل الصوتيات فقط
-        ydl_opts = {
-            'format': 'bestaudio/best',
-            'outtmpl': f'{DOWNLOAD_FOLDER}/%(playlist_index)s - %(title)s.%(ext)s',  
-            'postprocessors': [{
-                'key': 'FFmpegExtractAudio',
-                'preferredcodec': 'mp3',
-                'preferredquality': '192',
-            }],
-            'noplaylist': False,  # فرض تحميل قائمة التشغيل
-        }
+# ✅ تثبيت FFmpeg تلقائيًا إذا لم يكن موجودًا
+def install_ffmpeg():
+    if not os.path.exists(FFMPEG_PATH):
+        logger.info("⚙️ يتم تثبيت FFmpeg...")
+        subprocess.run(["nix-env", "-iA", "nixpkgs.ffmpeg"], check=True)
+install_ffmpeg()
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
+# ✅ ترحيب تلقائي كل 30 ثانية لإبقاء البوت نشطًا
+def keep_bot_active(app):
+    while True:
+        try:
+            app.bot.send_message(chat_id=YOUR_CHAT_ID, text="🤖 البوت يعمل بنجاح!")
+        except Exception as e:
+            logger.error(f"⚠️ خطأ في إرسال الرسالة الترحيبية: {e}")
+        time.sleep(30)  # إرسال الرسالة كل 30 ثانية
 
-            # إذا كان الرابط لقائمة تشغيل
-            if 'entries' in info:
-                total_videos = len(info['entries'])
-                bot.edit_message_text(f"📥 جاري تحميل {total_videos} مقطع صوتي بالترتيب...", chat_id, message_id)
+# ================================================
+# 🟢 أوامر البوت
+# ================================================
+async def start(update: Update, context):
+    await update.message.reply_text("🎵 أهلاً بك! أرسل لي رابط فيديو YouTube أو قائمة تشغيل وسأحوله لك إلى MP3.")
 
-                for entry in sorted(info['entries'], key=lambda x: x['playlist_index']):
-                    file_path = f"{DOWNLOAD_FOLDER}/{entry['playlist_index']} - {entry['title']}.mp3"
-                    send_audio(file_path, chat_id)
+async def download_audio(update: Update, context):
+    url = update.message.text
+    chat_id = update.message.chat_id
+    await update.message.reply_text("⏳ جاري تحميل الصوت... يرجى الانتظار.")
 
-            else:  # إذا كان الرابط لفيديو واحد فقط
-                file_path = f"{DOWNLOAD_FOLDER}/{info['title']}.mp3"
-                bot.edit_message_text("📥 جاري تحميل مقطع واحد...", chat_id, message_id)
-                send_audio(file_path, chat_id)
-
-        bot.send_message(chat_id, "✅ تم تحميل جميع المقاطع الصوتية!")
-
-    except Exception as e:
-        bot.send_message(chat_id, f"❌ حدث خطأ: {str(e)}")
-
-# 🔹 دالة إرسال الملفات الصوتية وحذفها بعد الإرسال
-def send_audio(file_path, chat_id):
-    try:
-        with open(file_path, 'rb') as audio:
-            bot.send_audio(chat_id, audio)
-        os.remove(file_path)  # حذف الملف بعد الإرسال
-    except Exception as e:
-        bot.send_message(chat_id, f"⚠️ خطأ أثناء إرسال الملف: {str(e)}")
-
-# 🔹 رسالة الترحيب
-@bot.message_handler(commands=['start'])
-def start(message):
-    bot.send_message(message.chat.id, "👋 مرحبًا بك!\nأرسل لي رابط **فيديو يوتيوب أو قائمة تشغيل**، وسأقوم باستخراج جميع الصوتيات لك! 🎵")
-
-# 🔹 التعامل مع الروابط (يدعم الفيديوهات الفردية وقوائم التشغيل)
-@bot.message_handler(func=lambda message: message.text.startswith("http"))
-def handle_url(message):
-    msg = bot.send_message(message.chat.id, "🔍 جاري التحقق من الرابط...")
+    # 🔹 تحميل الصوت باستخدام yt-dlp
+    file_path = await process_download(url)
     
-    # تشغيل التحميل في خيط منفصل (Thread) لمنع تجميد البوت
-    threading.Thread(target=download_audio, args=(message.text, message.chat.id, msg.message_id)).start()
+    if file_path and os.path.exists(file_path):
+        await context.bot.send_document(chat_id, document=open(file_path, "rb"))
+        os.remove(file_path)  # حذف الملف بعد الإرسال لتوفير المساحة
+    else:
+        await update.message.reply_text("❌ حدث خطأ أثناء التحميل. تأكد من صحة الرابط.")
 
-# 🔹 تشغيل البوت
-bot.polling()
+# ================================================
+# ⏬ معالجة التحميل باستخدام yt-dlp
+# ================================================
+async def process_download(url):
+    output_template = f"{DOWNLOADS_FOLDER}/%(title)s.%(ext)s"
+    ydl_opts = {
+        'format': 'bestaudio/best',
+        'outtmpl': output_template,
+        'ffmpeg_location': FFMPEG_PATH,
+        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+        'nocheckcertificate': True,
+    }
+    
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info_dict = ydl.extract_info(url, download=True)
+            file_path = ydl.prepare_filename(info_dict).replace(".webm", ".mp3")
+            return file_path
+    except Exception as e:
+        logger.error(f"❌ خطأ في التحميل: {e}")
+        return None
+
+# ================================================
+# 🤖 تشغيل بوت تيليجرام
+# ================================================
+def main():
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_audio))
+
+    # 🔹 تشغيل رسالة الترحيب كل 30 ثانية
+    threading.Thread(target=keep_bot_active, args=(app,), daemon=True).start()
+
+    logger.info("🚀 البوت يعمل الآن...")
+    app.run_polling()
+
+# ================================================
+# 🌍 خادم Flask للحفاظ على تشغيل البوت
+# ================================================
+flask_app = Flask(__name__)
+@flask_app.route('/')
+def home():
+    return "✅ البوت يعمل!"
+
+def run_web():
+    flask_app.run(host="0.0.0.0", port=8080)
+
+# 🔹 تشغيل Flask مع بوت تيليجرام
+if __name__ == "__main__":
+    threading.Thread(target=run_web, daemon=True).start()
+    main()
