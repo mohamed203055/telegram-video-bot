@@ -1,113 +1,68 @@
-import os
-import logging
-import threading
-import time
-import subprocess
-from flask import Flask
-from telegram import Update
-from telegram.ext import Application, CommandHandler, MessageHandler, filters
-import yt_dlp
-
-# ✅ جلب التوكن بأمان من Replit Secrets
-TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-if not TOKEN:
-    raise ValueError("❌ خطأ: لم يتم العثور على توكن البوت! تأكد من إضافته في Secrets.")
-
-# ✅ ضبط السجل لتسجيل الأخطاء
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# ✅ إنشاء مجلد التحميلات
-DOWNLOADS_FOLDER = "downloads"
-os.makedirs(DOWNLOADS_FOLDER, exist_ok=True)
-
-# ✅ ضبط مسار FFmpeg (للتأكد من تثبيته في Replit)
-FFMPEG_PATH = "/home/runner/.nix-profile/bin/ffmpeg"
-
-# ✅ تثبيت FFmpeg تلقائيًا إذا لم يكن موجودًا
-def install_ffmpeg():
-    if not os.path.exists(FFMPEG_PATH):
-        logger.info("⚙️ يتم تثبيت FFmpeg...")
-        subprocess.run(["nix-env", "-iA", "nixpkgs.ffmpeg"], check=True)
-install_ffmpeg()
-
-# ✅ ترحيب تلقائي كل 30 ثانية لإبقاء البوت نشطًا
-def keep_bot_active(app):
-    while True:
-        try:
-            app.bot.send_message(chat_id=YOUR_CHAT_ID, text="🤖 البوت يعمل بنجاح!")
-        except Exception as e:
-            logger.error(f"⚠️ خطأ في إرسال الرسالة الترحيبية: {e}")
-        time.sleep(30)  # إرسال الرسالة كل 30 ثانية
-
-# ================================================
-# 🟢 أوامر البوت
-# ================================================
-async def start(update: Update, context):
-    await update.message.reply_text("🎵 أهلاً بك! أرسل لي رابط فيديو YouTube أو قائمة تشغيل وسأحوله لك إلى MP3.")
-
-async def download_audio(update: Update, context):
-    url = update.message.text
-    chat_id = update.message.chat_id
-    await update.message.reply_text("⏳ جاري تحميل الصوت... يرجى الانتظار.")
-
-    # 🔹 تحميل الصوت باستخدام yt-dlp
-    file_path = await process_download(url)
-    
-    if file_path and os.path.exists(file_path):
-        await context.bot.send_document(chat_id, document=open(file_path, "rb"))
-        os.remove(file_path)  # حذف الملف بعد الإرسال لتوفير المساحة
-    else:
-        await update.message.reply_text("❌ حدث خطأ أثناء التحميل. تأكد من صحة الرابط.")
-
-# ================================================
-# ⏬ معالجة التحميل باستخدام yt-dlp
-# ================================================
-async def process_download(url):
-    output_template = f"{DOWNLOADS_FOLDER}/%(title)s.%(ext)s"
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'outtmpl': output_template,
-        'ffmpeg_location': FFMPEG_PATH,
-        'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
+'ffmpeg_location': FFMPEG_PATH,
+        'ignoreerrors': True,
         'nocheckcertificate': True,
     }
     
-    try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(url, download=True)
-            file_path = ydl.prepare_filename(info_dict).replace(".webm", ".mp3")
-            return file_path
-    except Exception as e:
-        logger.error(f"❌ خطأ في التحميل: {e}")
-        return None
+    if media_type == "audio":
+        ydl_opts.update({
+            'format': 'bestaudio/best',
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
+        })
+    else:
+        ydl_opts['format'] = 'bestvideo+bestaudio/best'
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return os.path.join(DOWNLOADS_FOLDER, info.get('playlist_title', 'playlist'))
+
+async def download_single(url, media_type):
+    ydl_opts = {
+        'outtmpl': f'{DOWNLOADS_FOLDER}/%(title)s.%(ext)s',
+        'ffmpeg_location': FFMPEG_PATH,
+        'nocheckcertificate': True,
+    }
+    
+    if media_type == "audio":
+        ydl_opts.update({
+            'format': 'bestaudio/best',
+            'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3'}],
+        })
+    else:
+        ydl_opts['format'] = 'bestvideo+bestaudio/best'
+    
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        return ydl.prepare_filename(info).replace('.webm', '.mp3' if media_type == "audio" else '.mp4')
 
 # ================================================
-# 🤖 تشغيل بوت تيليجرام
+# 🤖 تشغيل البوت مع إدارة أفضل للموارد
 # ================================================
 def main():
-    app = Application.builder().token(TOKEN).build()
+    app = Application.builder().token(TOKEN).concurrent_updates(True).build()
+    
+    # تسجيل الأوامر
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_audio))
-
-    # 🔹 تشغيل رسالة الترحيب كل 30 ثانية
-    threading.Thread(target=keep_bot_active, args=(app,), daemon=True).start()
-
+    app.add_handler(CommandHandler("audio", download_media))
+    app.add_handler(CommandHandler("video", download_media))
+    app.add_handler(CommandHandler("album", download_media))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # تشغيل خدمة الخلفية لإبقاء البوت نشطًا
+    threading.Thread(target=keep_alive, daemon=True).start()
+    
     logger.info("🚀 البوت يعمل الآن...")
-    app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 # ================================================
-# 🌍 خادم Flask للحفاظ على تشغيل البوت
+# 🌍 خادم ويب محسن
 # ================================================
-flask_app = Flask(__name__)
+flask_app = Flask(name)
 @flask_app.route('/')
 def home():
-    return "✅ البوت يعمل!"
+    return "✅ البوت يعمل بشكل طبيعي!"
 
-def run_web():
-    flask_app.run(host="0.0.0.0", port=8080)
+def keep_alive():
+    flask_app.run(host='0.0.0.0', port=8080)
 
-# 🔹 تشغيل Flask مع بوت تيليجرام
-if __name__ == "__main__":
-    threading.Thread(target=run_web, daemon=True).start()
+if name == "main":
     main()
