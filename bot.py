@@ -44,44 +44,40 @@ def keep_bot_active(app):
 # 🟢 أوامر البوت
 # ================================================
 async def start(update: Update, context):
-    await update.message.reply_text("🎵 أهلاً بك! أرسل لي رابط قائمة تشغيل YouTube أو ألبوم وسأحوله لك إلى MP3.")
+    await update.message.reply_text("🎵 أهلاً بك! أرسل لي رابط فيديو YouTube أو قائمة تشغيل وسأحوله لك إلى MP3.")
 
 async def download_audio(update: Update, context):
     url = update.message.text
     chat_id = update.message.chat_id
-    await update.message.reply_text("⏳ جاري تحميل الألبوم بالكامل... يرجى الانتظار.")
+    await update.message.reply_text("⏳ جاري تحميل الصوت... يرجى الانتظار.")
 
-    # 🔹 تحميل جميع الملفات الصوتية من قائمة التشغيل
-    files = await process_playlist(url)
-
-    if files:
-        for file_path in files:
-            if os.path.exists(file_path):
-                await context.bot.send_document(chat_id, document=open(file_path, "rb"))
-                os.remove(file_path)  # حذف الملف بعد الإرسال لتوفير المساحة
-        await update.message.reply_text("✅ تم تحميل جميع المقاطع الصوتية بنجاح!")
+    # 🔹 تحميل الصوت باستخدام yt-dlp
+    file_path = await process_download(url)
+    
+    if file_path and os.path.exists(file_path):
+        await context.bot.send_document(chat_id, document=open(file_path, "rb"))
+        os.remove(file_path)  # حذف الملف بعد الإرسال لتوفير المساحة
     else:
         await update.message.reply_text("❌ حدث خطأ أثناء التحميل. تأكد من صحة الرابط.")
 
 # ================================================
-# ⏬ معالجة تحميل الألبوم بالكامل
+# ⏬ معالجة التحميل باستخدام yt-dlp
 # ================================================
-async def process_playlist(url):
-    output_template = f"{DOWNLOADS_FOLDER}/%(playlist_index)s - %(title)s.%(ext)s"
+async def process_download(url):
+    output_template = f"{DOWNLOADS_FOLDER}/%(title)s.%(ext)s"
     ydl_opts = {
         'format': 'bestaudio/best',
         'outtmpl': output_template,
         'ffmpeg_location': FFMPEG_PATH,
         'postprocessors': [{'key': 'FFmpegExtractAudio', 'preferredcodec': 'mp3', 'preferredquality': '192'}],
         'nocheckcertificate': True,
-        'noplaylist': False,  # 🔹 تحميل الألبوم بالكامل وليس فيديو واحد فقط
     }
     
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info_dict = ydl.extract_info(url, download=True)
-            files = [ydl.prepare_filename(entry).replace(".webm", ".mp3") for entry in info_dict.get("entries", [])]
-            return files
+            file_path = ydl.prepare_filename(info_dict).replace(".webm", ".mp3")
+            return file_path
     except Exception as e:
         logger.error(f"❌ خطأ في التحميل: {e}")
         return None
