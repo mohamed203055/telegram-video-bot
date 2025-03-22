@@ -1,7 +1,7 @@
 # قبل التعديل
-- name: Run pytest
+- name: Test with pytest
   run: pytest
 
 # بعد التعديل (حذف الخطوة)
-# - name: Run pytest
+# - name: Test with pytest
 #   run: pytest
